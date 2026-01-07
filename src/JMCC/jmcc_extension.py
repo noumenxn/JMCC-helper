@@ -1,3 +1,5 @@
+import bisect
+
 global_text = {}
 global_tokens = {}
 global_new = {}
@@ -86,6 +88,7 @@ class Tokens:
     JMCC_DEFINE: int = 71
     JMCC_VARIABLE: int = 72
     IN: int = 73
+
 def find_value_from_list(val, possible_list=None):
     if possible_list is None:
         possible_list = set()
@@ -113,11 +116,8 @@ class Token:
         self.source = source
         self.giga = giga
 
-    def __str__(self):
-        return f"Token({self.type},\"{self.value}\")"
-
     def __repr__(self):
-        return self.__str__()
+        return f"Token({self.type},\"{self.value}\")"
 
 class Lexer:
     __slots__ = ("current_pos", "current_char", "allow_jmcc", "source", "text")
@@ -369,13 +369,17 @@ class Lexer:
                              int(token_value),
                              starting_pos, self.current_pos - 1, self.source)
             except Exception:
+                try:
+                    val = float(token_value)
+                except:
+                    val = 0.0
                 return Token(Tokens.PLUS_NUMBER if plus else (Tokens.MINUS_NUMBER if minus else Tokens.NUMBER),
-                             float(token_value),
+                             val,
                              starting_pos, self.current_pos - 1, self.source)
 
         if self.current_char == "(":
             self.advance()
-            return Token(Tokens.LPAREN, ")", starting_pos, starting_pos, self.source)
+            return Token(Tokens.LPAREN, "(", starting_pos, starting_pos, self.source)
         if self.current_char == ")":
             self.advance()
             return Token(Tokens.RPAREN, ")", starting_pos, starting_pos, self.source)
@@ -497,15 +501,11 @@ class Lexer:
             lest.append(token)
         return lest
 
-
 def tokenize(txt, source=None, allow_jmcc=False):
     if source is None:
         source = new("source")
-    if source not in global_text:
-        global_text[source] = txt
-    if source not in global_tokens:
-        tokens = Lexer(txt, source, allow_jmcc=allow_jmcc).get_remaining_tokens()
-        global_tokens[source] = tokens
+    global_text[source] = txt
+    global_tokens[source] = Lexer(txt, source, allow_jmcc=allow_jmcc).get_remaining_tokens()
     return global_tokens[source]
 
 def clear(source):
@@ -522,40 +522,124 @@ def line_and_offset_to_pos(text: str, line, offset):
         start_pos = text.find("\n", start_pos + 1)
         line -= 1
     return start_pos + 1 + offset
-def pos_to_line_and_offset(txt:str, starting_pos, ending_pos):
-    start_line_index = txt.rfind("\n", 0, starting_pos)
-    start_line = txt.count("\n", 0, starting_pos)
-    ending_line_index = txt.find("\n", ending_pos)
-    end_line = txt.count("\n", 0, ending_pos)
-    if ending_line_index == -1:
-        ending_line_index = len(txt)
-    if start_line_index == -1:
-        start_line_index = 0
-    elif start_line_index > 0:
-        start_line_index += 1
-    return (start_line, start_line_index), (end_line, ending_line_index)
 
-def find_token_that_have_pos(source, pos):
-    for i1 in range(len(global_tokens[source])):
-        i = global_tokens[source][i1]
-        i: Token
-        if i.starting_pos <= pos <= i.ending_pos:
-            return i1
-    return i1
+def pos_to_line_and_offset(txt: str, starting_pos, ending_pos):
+    start_line = txt.count("\n", 0, starting_pos)
+    start_line_start = txt.rfind("\n", 0, starting_pos)
+    if start_line_start == -1:
+        start_char = starting_pos
+    else:
+        start_char = starting_pos - (start_line_start + 1)
+    end_line = txt.count("\n", 0, ending_pos)
+    end_line_start = txt.rfind("\n", 0, ending_pos)
+    if end_line_start == -1:
+        end_char = ending_pos
+    else:
+        end_char = ending_pos - (end_line_start + 1)
+    return (start_line, start_char), (end_line, end_char)
+
+def pos_to_idx(source, pos):
+    return bisect.bisect_left(global_tokens[source], pos, key=lambda token: token.starting_pos) - 1
 
 def try_find_object(source, pos):
-    if pos + 1 < len(global_tokens[source]) and pos >= 1 and global_tokens[source][pos-1].type == Tokens.VARIABLE and global_tokens[source][pos].type == Tokens.DOUBLE_COLON and global_tokens[source][pos+1].type == Tokens.VARIABLE:
-        return global_tokens[source][pos-1].value + global_tokens[source][pos].value + global_tokens[source][pos+1].value
-    if global_tokens[source][pos].type == Tokens.VARIABLE:
-        if pos >= 1 and global_tokens[source][pos-1].type == Tokens.DOT:
-            return "."+global_tokens[source][pos].value
-        if pos >= 2 and global_tokens[source][pos-2].type == Tokens.VARIABLE and global_tokens[source][pos-1].type == Tokens.DOUBLE_COLON:
-            return global_tokens[source][pos-2].value + global_tokens[source][pos-1].value + global_tokens[source][pos].value
-        if pos + 2 < len(global_tokens[source]) and global_tokens[source][pos+1].type == Tokens.DOUBLE_COLON and global_tokens[source][pos+2].type == Tokens.VARIABLE:
-            return global_tokens[source][pos].value + global_tokens[source][pos+1].value + global_tokens[source][pos+2].value
-    if pos + 1 < len(global_tokens[source]) and global_tokens[source][pos].type == Tokens.EVENT_DEFINE and global_tokens[source][pos+1].type == Tokens.SUBSTRING:
-        return global_tokens[source][pos].value + "<" + global_tokens[source][pos+1].value + ">"
-    if pos >= 1 and global_tokens[source][pos].type == Tokens.SUBSTRING and global_tokens[source][pos-1].type == Tokens.EVENT_DEFINE:
-        return global_tokens[source][pos-1].value + "<" + global_tokens[source][pos].value + ">"
+    tokens = global_tokens[source]
+    if not tokens: return ("", None, None)
+    pos = pos_to_idx(source,pos)
+    if pos < 0: pos = 0
+    max_len = len(tokens)
+    t_type = tokens[pos].type
+    if t_type == Tokens.DOUBLE_COLON and pos >= 1 and tokens[pos-1].type == Tokens.VARIABLE:
+        if pos + 1 < max_len and tokens[pos+1].type == Tokens.VARIABLE:
+            val = tokens[pos-1].value + tokens[pos].value + tokens[pos+1].value
+            return (val, pos-1, pos+1)
+        val = tokens[pos-1].value + tokens[pos].value
+        return (val, pos-1, pos)
+    if t_type == Tokens.VARIABLE:
+        if pos >= 1 and tokens[pos-1].type == Tokens.DOT:
+            val = "." + tokens[pos].value
+            return (val, pos-1, pos)
+        if pos >= 2 and tokens[pos-2].type == Tokens.VARIABLE and tokens[pos-1].type == Tokens.DOUBLE_COLON:
+            val = tokens[pos-2].value + tokens[pos-1].value + tokens[pos].value
+            return (val, pos-2, pos)
+        if pos + 2 < max_len and tokens[pos+1].type == Tokens.DOUBLE_COLON and tokens[pos+2].type == Tokens.VARIABLE:
+            val = tokens[pos].value + tokens[pos+1].value + tokens[pos+2].value
+            return (val, pos, pos+2)
+    if pos + 1 < max_len and t_type == Tokens.EVENT_DEFINE and tokens[pos+1].type == Tokens.SUBSTRING:
+        val = tokens[pos].value + "<" + tokens[pos+1].value + ">"
+        return (val, pos, pos+1)
+    if pos >= 1 and t_type == Tokens.LESS and tokens[pos-1].type == Tokens.EVENT_DEFINE:
+        val = tokens[pos-1].value + tokens[pos].value
+        return (val, pos-1, pos)
+    if pos >= 1 and t_type == Tokens.SUBSTRING and tokens[pos-1].type == Tokens.EVENT_DEFINE:
+        val = tokens[pos-1].value + "<" + tokens[pos].value + ">"
+        return (val, pos-1, pos)
+    if pos >= 1 and t_type == Tokens.VARIABLE and tokens[pos-1].type == Tokens.DECORATOR:
+        val = tokens[pos-1].value + tokens[pos].value
+        return (val, pos-1, pos)
+    return (str(tokens[pos].value), pos, pos)
 
-    return str(global_tokens[source][pos].value)
+def count_assignments(source, start_idx):
+    tokens, idx = global_tokens[source], start_idx - 1
+    while idx >= 0:
+        if (t := tokens[idx]).type == Tokens.ASSIGN: idx -= 1; break
+        if t.type != Tokens.NEXT_LINE: return 0
+        idx -= 1
+    else: return 0
+    count, expect_var = 0, True
+    while idx >= 0:
+        if (t := tokens[idx]).type == Tokens.VARIABLE:
+            if not expect_var: break
+            count += 1; expect_var = False
+        elif t.type == Tokens.COMMA:
+            if expect_var: break
+            expect_var = True
+        elif t.type != Tokens.NEXT_LINE: break
+        idx -= 1
+    return count
+
+def get_call_context(source, pos):
+    CLOSING, OPENING = {Tokens.RPAREN, Tokens.RSPAREN, Tokens.RCPAREN}, {Tokens.LPAREN, Tokens.LSPAREN, Tokens.LCPAREN}
+    tokens, idx = global_tokens[source], pos_to_idx(source, pos)
+    balance, commas, depth, active_key, used_keys, expect_key = 0, 0, 0, None, set(), False
+    while idx >= 0:
+        t = tokens[idx]
+        if expect_key and t.type == Tokens.VARIABLE:
+            if commas == 0: active_key = t.value
+            else: used_keys.add(t.value)
+            expect_key = False
+        elif t.type in CLOSING: balance += 1; expect_key = False
+        elif t.type in OPENING:
+            if balance > 0: balance -= 1
+            elif t.type == Tokens.LPAREN:
+                func_name, func_start, _ = try_find_object(source, t.starting_pos - 1)
+                return func_name.lstrip('.'), commas, active_key, used_keys, depth, count_assignments(source, func_start)
+            else: depth += 1; commas, active_key, used_keys, expect_key = 0, None, set(), False
+        elif balance == 0:
+            if t.type == Tokens.COMMA: commas += 1; expect_key = False
+            elif t.type == Tokens.ASSIGN: expect_key = True
+            elif t.type == Tokens.SEMICOLON: break
+        idx -= 1
+    return None, 0, None, set(), 0, 0
+
+def get_signature_context(func_token, commas, active_key, used_keys, origin_linked, signatures, assign_count=0):
+    if not func_token: return [], -1
+    real_tok, oid = origin_linked.get(func_token, (func_token, None))
+    if not (sig := signatures.get(real_tok)): return [], -1
+    assigned = set(sig.get('assign', [])[:assign_count]) if assign_count else set()
+    params = [(i, t, v) for i, t, v in zip(sig.get('id',[]), sig.get('type',[]), sig.get('value',[])) if i != oid and i not in assigned]
+    v_idx = next((i for i, (k,_,_) in enumerate(params) if k.startswith('*') and not k.startswith('**')), -1)
+    if active_key:
+        idx = next((i for i, (k,_,_) in enumerate(params) if k == active_key), -1)
+        return params, (-1 if idx != -1 and active_key in used_keys else idx) 
+    avail = [i for i, (k,_,_) in enumerate(params) if k not in used_keys]
+    p_idx = commas - len(used_keys)
+    if p_idx >= 0 and p_idx < len(avail):
+        idx = avail[p_idx]
+        return params, (v_idx if v_idx != -1 and idx >= v_idx else idx)
+    return params, v_idx
+
+def get_token(source, pos, left_offset=0):
+    if not global_tokens[source]: return Token(Tokens.NONE,"None",0,0,source)
+    idx = pos_to_idx(source, pos)
+    if (idx + left_offset) < 0: return Token(Tokens.NONE,"None",0,0,source)
+    return global_tokens[source][idx + left_offset]
