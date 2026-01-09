@@ -4,7 +4,7 @@ import os
 from functools import lru_cache
 from jmcc_extension import *
 
-TRIGGERS = {'.', '=', '(', '"', ',', "'", '<', '@', '['}
+TRIGGERS = {'.', '=', '(', '"', ',', "'", '<', '@', '[', '%'}
 
 def send_message(message: dict) -> None:
     content = json.dumps(message).encode('utf-8')
@@ -19,7 +19,7 @@ def read_message():
 
 @lru_cache(maxsize=32)
 def get_cached_context(func_token, p_id, p_type, p_val, depth, is_array):
-    TEXT_ARG_MAP = {('item', 'id'): items_completions, ('sound', 'sound'): sound_completions,('particle', 'particle'): particle_completions, ('particle', 'material'): block_completions,('potion', 'potion'): potion_completions}
+    TEXT_ARG_MAP = {('@item', 'id'): items_completions,('item', 'id'): items_completions, ('sound', 'sound'): sound_completions,('particle', 'particle'): particle_completions, ('particle', 'material'): block_completions,('potion', 'potion'): potion_completions}
     items = []
     match p_type:
         case 'enum':
@@ -38,13 +38,13 @@ def get_cached_context(func_token, p_id, p_type, p_val, depth, is_array):
         case 'block': items = block_completions
         case _: items = value_type_cache.get(p_type, [])
     if is_array and depth == 0 and items:
-        return [{**i, 'insertText': f"[{i.get('insertText', i['label'])}]"} for i in items]
+        return [{**i, 'insertText': f"[{i.get('insertText', i['label'])}$0]", "insertTextFormat": 2} for i in items]
     return items
 
 
 def load_assets() -> None:
     global ASSETS, WITH_CONDITIONAL_COMPLETIONS, STATIC_CODE_COMPLETIONS, ORIGIN_COMPLETIONS, SELECTOR_COMPLETIONS, DECORATOR_COMPLETIONS
-    global block_completions, enchant_completions, items_completions, particle_completions, potion_completions, items_completions, sound_completions, minimessage_completions
+    global block_completions, enchant_completions, items_completions, particle_completions, potion_completions, items_completions, sound_completions, minimessage_completions, placeholder_completions
     global STATIC_CODE_SIGNATURES
     global origin_linked, with_conditional_cache, value_type_cache
     origin_linked, with_conditional_cache = {}, set()
@@ -54,9 +54,11 @@ def load_assets() -> None:
     read = lambda *path: json.load(open(os.path.join(base_path, *path), encoding='utf-8'))
     base_types = ['item', 'location', 'vector', 'potion', 'sound','text', 'particle', 'number', 'block', 'variable', 'array', 'map', 'any', 'none']
     rich_types = ['item', 'location', 'vector', 'potion', 'sound', 'particle']
+    math_funcs = ['abs', 'sqrt','cbrt','ceil','floor','sin','cos','round','pow','min','max']
     player_selectors = ['current','default','default_player','killer_player','damager_player','shooter_player','victim_player','random_player','all_players']
     value_selectors = ['current','default','default_entity','killer_entity','damager_entity','victim_entity','shooter_entity','projectile','last_entity']
     entity_selectors = ['current', 'default_entity','killer_entity','shooter_entity','projectile','victim_entity','random_entity','all_mobs','all_entities','last_entity']
+    placeholders = ["%player%", "%player_uuid%", "%entity%", "%entity_uuid%", "%victim%", "%victim_uuid%", "%damager%", "%damager_uuid%", "%shooter%", "%shooter_uuid%", "%killer%", "%killer_uuid%", "%selected%", "%selected_uuid%", "%display_name%", "%uuid%", "%space%", "%empty%", "%var%", "%var_local%", "%var_save%", "%var_line%", "%length%", "%length_local%", "%length_save%", "%length_line%", "%index%", "%index_local%", "%index_save%", "%index_line%", "%entry%", "%entry_local%", "%entry_save%", "%entry_line%", "%var%", "%math%", "%player_amount%", "%entity_count%", "%entity_amount%", "%global_online%", "%online%", "%time%", "%worlds%", "%damage%", "%random%", "%random_uuid%"]
     decorators = ['@item', '@description', '@args', '@return_var', '@hidden','@getter','@setter','@overload']
     magic_methods = ['__add__', '__subtract__', '__multiply__', '__divide__', '__remainder__', '__pow__', '__equals__', '__not_equals__', '__greater__', '__less__', '__greater_or_equals__', '__less_or_equals__', '__contains__', '__iadd__', '__isubtract__', '__imultiply__', '__idivide__', '__iremainder__', '__ipow__', '__dict__', '__custom__', '__slots__', '__get_attribute__', '__set_attribute__', '__subscript__', '__slice__', '__init__']
     opened_minimessage_tags = ['black', 'dark_blue', 'dark_green', 'dark_aqua', 'dark_red', 'dark_purple', 'gold', 'gray', 'dark_gray', 'blue', 'green', 'aqua', 'red', 'light_purple', 'yellow', 'white', 'bold', 'b', 'italic', 'i', 'em', 'underlined', 'u', 'strikethrough', 'st', 'obfuscated', 'obf', 'reset', 'r', 'pre', 'click:open_url', 'click:run_command', 'click:suggest_command', 'click:copy_to_clipboard', 'click:change_page', 'hover:show_text', 'hover:show_item', 'hover:show_entity', 'key:key.jump', 'key:key.sneak', 'key:key.sprint', 'key:key.left', 'key:key.right', 'key:key.back', 'key:key.forward', 'key:key.attack', 'key:key.pickItem', 'key:key.use', 'key:key.drop', 'key:key.swapOffhand', 'key:key.inventory', 'key:key.loadToolbarActivator', 'key:key.saveToolbarActivator', 'key:key.playerlist', 'key:key.chat', 'key:key.command', 'key:key.socialInteractions', 'key:key.advancements', 'key:key.screenshot', 'key:key.fullscreen', 'key:key.spectatorOutlines', 'key:key.togglePerspective', 'key:key.smoothCamera', 'key:key.cinematicCamera', 'key:key.hotbar.1', 'key:key.hotbar.2', 'key:key.hotbar.3', 'key:key.hotbar.4', 'key:key.hotbar.5', 'key:key.hotbar.6', 'key:key.hotbar.7', 'key:key.hotbar.8', 'key:key.hotbar.9', 'pride:trans', 'pride:bi', 'pride:lesbian', 'pride:gay', 'pride:pan', 'pride:ace', 'pride:nonbinary', 'pride:genderqueer', 'font:minecraft:default', 'font:minecraft:uniform', 'font:minecraft:alt', 'selector:@p', 'selector:@a', 'selector:@r', 'selector:@s', 'selector:@e', 'gradient:', 'rainbow:', 'transition:', 'font:', 'lang:', 'translate:', 'trans:', 'tr:', 'insert:', 'color:', 'colour:', 'c:', 'shadow:', 'score:', 'nbt:', 'sprite:', 'head:', 'newline', 'br']
@@ -71,11 +73,13 @@ def load_assets() -> None:
     items_completions = [{'label': i, 'kind': 13, 'insertText': f'"{i}"'} for i in read('data', 'items.json')]
     sound_completions = [{'label': s, 'kind': 13, 'insertText': f'"{s}"'} for s in read('data', 'sounds.json')]
     block_completions = [{'label': b, 'kind': 13, 'insertText': f'"{b}"'} for b in read('data', 'blocks.json')]
+    placeholder_completions = [{'label': b, 'kind': 13} for b in placeholders]
     minimessage_completions = [{'label': b, 'kind': 13, 'insertText': f'{b}'} for b in opened_minimessage_tags]
     minimessage_completions.extend([{'label': b, 'kind': 13, 'insertText': f'{b}', 'sortText': 'z'} for b in closed_minimessage_tags])
     DECORATOR_COMPLETIONS = [{'label': d, 'kind': 13} for d in decorators]
     STATIC_CODE_COMPLETIONS.extend({'label': m, 'kind': 3} for m in magic_methods)
     STATIC_CODE_COMPLETIONS.extend({'label': t, 'kind': 3} for t in rich_types)
+    STATIC_CODE_COMPLETIONS.extend({'label': t, 'kind': 3} for t in math_funcs)
     for x in read('data', 'events.json'):
         name = f"event<{x['id']}>"
         detail = ASSETS.get(name, {}).get('detail')
@@ -107,7 +111,8 @@ def load_assets() -> None:
                 'assign': valid_assigns
             }
     STATIC_CODE_SIGNATURES.update( { 'location': {'id': ['x', 'y', 'z', 'yaw', 'pitch'], 'type': ['number'] * 5, 'value': [None] * 5},'item': {'id': ['id', 'name', 'count', 'lore', 'nbt', 'custom_tags'], 'type': ['text', 'text', 'number', 'text', 'components', 'map'], 'value': [None] * 6},'sound': {'id': ['sound', 'volume', 'pitch', 'variation', 'source'], 'type': ['text', 'number', 'number', 'text', 'enum'], 'value': [None, None, None, None, ['RECORD', 'BLOCK', 'MASTER', 'VOICE', 'WEATHER', 'AMBIENT', 'NEUTRAL', 'HOSTILE', 'PLAYER', 'MUSIC']]},'vector': {'id': ['x', 'y', 'z'], 'type': ['number'] * 3, 'value': [None] * 3},'particle': {'id': ['particle', 'count', 'spread_x', 'spread_y', 'motion_x', 'motion_y', 'motion_z', 'material', 'color', 'size', 'to_color'], 'type': ['text', 'number', 'number', 'number', 'number', 'number', 'number', 'text', 'number', 'number', 'number'], 'value': [None] * 11},'potion': {'id': ['potion', 'amplifier', 'duration'], 'type': ['text', 'number', 'number'], 'value': [None] * 3}})
-
+    STATIC_CODE_SIGNATURES.update( { 'abs': {'id': ['number'], 'type': ['number'], 'value': [None]}, 'sqrt': {'id': ['number'], 'type': ['number'], 'value': [None]},'cbrt': {'id': ['number'], 'type': ['number'], 'value': [None]},'ceil': {'id': ['number'], 'type': ['number'], 'value': [None]},'floor': {'id': ['number'], 'type': ['number'], 'value': [None]},'sin': {'id': ['number'], 'type': ['number'], 'value': [None]},'cos': {'id': ['number'], 'type': ['number'], 'value': [None]},'round': {'id': ['number','precision'], 'type': ['number']*2, 'value': [None]*2},'pow': {'id': ['number', 'pow'], 'type': ['number']*2, 'value': [None]*2},'min': {'id': ['number1','number2'], 'type': ['number']*2, 'value': [None]*2},'max': {'id': ['number1','number2'], 'type': ['number']*2, 'value': [None]*2} } )
+    STATIC_CODE_SIGNATURES.update( { '@item': {'id': ['id'], 'type': ['text'], 'value': [None]} ,'@args': {'id': ['*position'], 'type': ['text'], 'value': [None]}, '@description': {'id': ['*description'], 'type': ['text'], 'value': [None]},'@return_var': {'id': ['variable'], 'type': ['variable'], 'value': [None]} } )
 def handle_initialize(message: dict) -> dict:
     load_assets()
     params = message["params"]
@@ -116,7 +121,7 @@ def handle_initialize(message: dict) -> dict:
     HIDE_COMPLETION     = bool(init_opts.get("hideCompletion", False))
     HIDE_SIGNATURE_HELP = bool(init_opts.get("hideSignatureHelp", False))
     capabilities: dict = {"textDocumentSync": 1, "hoverProvider": not HIDE_HOVER}
-    if not HIDE_COMPLETION: capabilities["completionProvider"] = {"triggerCharacters": [".", "(", "[", "'", "<", '"', "@", ",","="]}
+    if not HIDE_COMPLETION: capabilities["completionProvider"] = {"triggerCharacters": [".", "(", "[", "'", "<", '"', "@", ",","=", "%"]}
     if not HIDE_SIGNATURE_HELP: capabilities["signatureHelpProvider"] = {"triggerCharacters": ["(",",", "="], "retriggerCharacters": [")"]}
 
     return { "jsonrpc": "2.0", "id": message["id"],"result":{"capabilities": capabilities} }
@@ -166,11 +171,10 @@ def handle_completion(message):
     curr, prev = get_token(uri, pos), get_token(uri, pos, -1)
     if not trigger and ((curr.value in TRIGGERS and (trigger := curr.value)) or (prev.value in TRIGGERS and (trigger := prev.value))): pass
     if curr.type == 4: trigger = '<'
+    elif curr.type == 30: trigger = curr.value[abs(pos-3)]
     rng_toks = None
     if trigger == '@' and (idx := pos_to_idx(uri, pos)) is not None:
         rng_toks = (global_tokens[uri][idx].starting_pos, global_tokens[uri][idx].ending_pos, -1)
-    elif trigger in {'"', "'"} and curr:
-        rng_toks = (curr.starting_pos, curr.ending_pos, -1)
     elif global_tokens[uri]:
         _, l, r = try_find_object(uri, pos)
         if l is not None and r is not None:
@@ -210,7 +214,7 @@ def handle_completion(message):
                 result, items = {}, ORIGIN_COMPLETIONS
         case '=' | ',': 
             result = {}
-            items = context_items if func_token else (STATIC_CODE_COMPLETIONS if trigger == '=' else [])
+            items = context_items if func_token else STATIC_CODE_COMPLETIONS
             if trigger == ',' and func_token: items.extend(key_context_items)
         case '"' | "'": 
             (l1, c1), (l2, c2) = pos_to_line_and_offset(global_text[uri],curr.starting_pos,curr.ending_pos)
@@ -227,6 +231,27 @@ def handle_completion(message):
             elif curr.type == 30:  result, items = {}, minimessage_completions
             else: items = STATIC_CODE_COMPLETIONS if prev and prev.type == 43 else []
         case '@': items = DECORATOR_COMPLETIONS
+        case '%':
+            val = curr.value
+            percent_index = val.rfind('%')
+            if percent_index != -1:
+                percent_start_abs = curr.starting_pos + percent_index
+                percent_end_abs = percent_start_abs + 1 
+                (l1, c1), (l2, c2) = pos_to_line_and_offset(global_text[uri], percent_start_abs, percent_end_abs)
+                result = {
+                    'itemDefaults': {
+                        'editRange': {
+                            'start': {'line': l2, 'character': c2},
+                            'end': {'line': l2, 'character': c2}
+                        }
+                    }
+                }
+                if curr.type in {3, 28, 29, 30}: 
+                    items = placeholder_completions  
+                else: 
+                    items = []
+            else:
+                items = []
         case _: items = context_items or STATIC_CODE_COMPLETIONS
     return {"jsonrpc": "2.0", "id": message["id"], "result": {**result, 'items': items}}
 
