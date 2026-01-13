@@ -12,15 +12,19 @@ export async function activate(ctx: vscode.ExtensionContext) {
     mkdirSync(join(root, 'assets'), { recursive: true });
     const outputChannel = vscode.window.createOutputChannel('JustCode Language Server');
     ctx.subscriptions.push(outputChannel);
+    
     const paths = {
         main: join(root, 'jmcc.py'),
         server: join(root, 'server.py'),
         prop: join(root, 'jmcc.properties'),
-        comp: join(root, 'assets', 'completions.json'),
+        compEn: join(root, 'assets', 'completions_en_US.json'),
+        compRu: join(root, 'assets', 'completions_ru_RU.json'),
         sounds: join(root, 'data', 'sounds.json')
     };
+
     const getPy = () => vscode.workspace.getConfiguration('jmcc').get<string>('compilerPath') || (process.platform === 'win32' ? 'python' : 'python3');
     const dl = (url: string, dst: string) => new Promise<void>(r => get(url, res => res.pipe(createWriteStream(dst)).on('finish', r)));
+    
     let syncing = false;
     const sync = (toFile: boolean) => {
         if (syncing || !existsSync(paths.prop)) return;
@@ -62,6 +66,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
         sync(false);
     }
     
+    const assetsBaseUrl = 'https://raw.githubusercontent.com/donzgold/JustMC_compilator/master/assets/';
+
     get('https://raw.githubusercontent.com/donzgold/JustMC_compilator/master/jmcc.properties', res => {
         let remote = '';
         res.on('data', d => remote += d).on('end', async () => {
@@ -71,14 +77,18 @@ export async function activate(ctx: vscode.ExtensionContext) {
                 let localContent = readFileSync(paths.prop, 'utf8');
                 localContent = localContent.replace(/data_version\s*=\s*\d+/, `data_version = ${rVer}`);
                 writeFileSync(paths.prop, localContent);
-                await dl('https://raw.githubusercontent.com/donzgold/JustMC_compilator/master/assets/completions.json', paths.comp);
+                await dl(assetsBaseUrl + 'completions_en_US.json', paths.compEn);
+                await dl(assetsBaseUrl + 'completions_ru_RU.json', paths.compRu);
                 sync(false);
             }
         });
     });
 
-    if (!existsSync(paths.comp)) await dl('https://raw.githubusercontent.com/donzgold/JustMC_compilator/master/assets/completions.json', paths.comp);
+    if (!existsSync(paths.compEn)) await dl(assetsBaseUrl + 'completions_en_US.json', paths.compEn);
+    if (!existsSync(paths.compRu)) await dl(assetsBaseUrl + 'completions_ru_RU.json', paths.compRu);
+
     if (!existsSync(paths.sounds)) await dl('https://raw.githubusercontent.com/noumenxn/JMCC-helper/main/src/sounds.json', paths.sounds);
+    
     const startLS = async () => {
         if (client) await client.stop();
         client = new LanguageClient(
@@ -117,7 +127,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
     ctx.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('jmcc.properties')) sync(true);
+            if (e.affectsConfiguration('jmcc.properties')) {
+                sync(true);
+                if (e.affectsConfiguration('jmcc.properties.lang')) {
+                    startLS();
+                }
+            }
             if (['hideCompletion', 'hideHover', 'hideSignatureHelp'].some(k => e.affectsConfiguration(`jmcc.${k}`))) startLS();
         }),
         vscode.commands.registerCommand('jmcc.decompile.json', () => {

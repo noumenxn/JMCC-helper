@@ -582,7 +582,7 @@ def count_assignments(source, start_idx):
     tokens, idx = global_tokens[source], start_idx - 1
     while idx >= 0:
         if (t := tokens[idx]).type == Tokens.ASSIGN: idx -= 1; break
-        if t.type != Tokens.NEXT_LINE: return 0
+        if t.type not in (Tokens.VARIABLE, Tokens.DOT, Tokens.COLON, Tokens.NEXT_LINE): return 0
         idx -= 1
     else: return 0
     count, expect_var = 0, True
@@ -599,6 +599,7 @@ def count_assignments(source, start_idx):
 
 def get_call_context(source, pos):
     CLOSING, OPENING = {Tokens.RPAREN, Tokens.RSPAREN, Tokens.RCPAREN}, {Tokens.LPAREN, Tokens.LSPAREN, Tokens.LCPAREN}
+    NESTED_CTX = {Tokens.LPAREN, Tokens.COMMA, Tokens.LSPAREN, Tokens.PLUS, Tokens.MINUS, Tokens.MULTIPLY, Tokens.DIVIDE, Tokens.DEG, Tokens.PR}
     tokens, idx = global_tokens[source], pos_to_idx(source, pos)
     balance, commas, depth, active_key, used_keys, expect_key = 0, 0, 0, None, set(), False
     while idx >= 0:
@@ -612,7 +613,16 @@ def get_call_context(source, pos):
             if balance > 0: balance -= 1
             elif t.type == Tokens.LPAREN:
                 func_name, func_start, _ = try_find_object(source, t.starting_pos - 1)
-                return func_name.lstrip('.'), commas, active_key, used_keys, depth, count_assignments(source, func_start)
+                assigns = count_assignments(source, func_start)
+                pidx = idx - 1
+                while pidx >= 0 and tokens[pidx].type in {
+                    Tokens.VARIABLE, Tokens.DOT, Tokens.COLON, Tokens.DOUBLE_COLON,
+                    Tokens.EVENT_DEFINE, Tokens.SUBSTRING, Tokens.LESS, Tokens.GREATER
+                }: 
+                    pidx -= 1
+                if pidx >= 0 and tokens[pidx].type in NESTED_CTX:
+                    assigns += 1
+                return func_name.lstrip('.'), commas, active_key, used_keys, depth, assigns
             else: depth += 1; commas, active_key, used_keys, expect_key = 0, None, set(), False
         elif balance == 0:
             if t.type == Tokens.COMMA: commas += 1; expect_key = False

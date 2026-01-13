@@ -42,7 +42,7 @@ def get_cached_context(func_token, p_id, p_type, p_val, depth, is_array):
     return items
 
 
-def load_assets() -> None:
+def load_assets(lang: str = 'ru_RU') -> None:
     global ASSETS, WITH_CONDITIONAL_COMPLETIONS, STATIC_CODE_COMPLETIONS, ORIGIN_COMPLETIONS, SELECTOR_COMPLETIONS, DECORATOR_COMPLETIONS
     global block_completions, enchant_completions, items_completions, particle_completions, potion_completions, items_completions, sound_completions, minimessage_completions, placeholder_completions
     global STATIC_CODE_SIGNATURES
@@ -66,7 +66,7 @@ def load_assets() -> None:
     value_type_cache = {t: [] for t in base_types}
     for rt in rich_types: value_type_cache[rt].append({'label': rt, 'kind': 3})
     SELECTOR_COMPLETIONS = {k: [{'label': s, 'kind': 13, 'insertText': f"{s}>"} for s in v] for k, v in {'player': player_selectors, 'value': value_selectors, 'entity': entity_selectors}.items()}
-    ASSETS = read('assets','completions.json')
+    ASSETS = read('assets', f'completions_{lang}.json')
     enchant_completions = read('data', 'enchants.json')
     particle_completions = [{'label': p, 'kind': 13, 'insertText': f'"{p}"'} for p in read('data', 'particles.json')]
     potion_completions = [{'label': p, 'kind': 13, 'insertText': f'"{p}"'} for p in read('data', 'potions.json')]
@@ -113,17 +113,18 @@ def load_assets() -> None:
     STATIC_CODE_SIGNATURES.update( { 'location': {'id': ['x', 'y', 'z', 'yaw', 'pitch'], 'type': ['number'] * 5, 'value': [None] * 5},'item': {'id': ['id', 'name', 'count', 'lore', 'nbt', 'custom_tags'], 'type': ['text', 'text', 'number', 'text', 'components', 'map'], 'value': [None] * 6},'sound': {'id': ['sound', 'volume', 'pitch', 'variation', 'source'], 'type': ['text', 'number', 'number', 'text', 'enum'], 'value': [None, None, None, None, ['RECORD', 'BLOCK', 'MASTER', 'VOICE', 'WEATHER', 'AMBIENT', 'NEUTRAL', 'HOSTILE', 'PLAYER', 'MUSIC']]},'vector': {'id': ['x', 'y', 'z'], 'type': ['number'] * 3, 'value': [None] * 3},'particle': {'id': ['particle', 'count', 'spread_x', 'spread_y', 'motion_x', 'motion_y', 'motion_z', 'material', 'color', 'size', 'to_color'], 'type': ['text', 'number', 'number', 'number', 'number', 'number', 'number', 'text', 'number', 'number', 'number'], 'value': [None] * 11},'potion': {'id': ['potion', 'amplifier', 'duration'], 'type': ['text', 'number', 'number'], 'value': [None] * 3}})
     STATIC_CODE_SIGNATURES.update( { 'abs': {'id': ['number'], 'type': ['number'], 'value': [None]}, 'sqrt': {'id': ['number'], 'type': ['number'], 'value': [None]},'cbrt': {'id': ['number'], 'type': ['number'], 'value': [None]},'ceil': {'id': ['number'], 'type': ['number'], 'value': [None]},'floor': {'id': ['number'], 'type': ['number'], 'value': [None]},'sin': {'id': ['number'], 'type': ['number'], 'value': [None]},'cos': {'id': ['number'], 'type': ['number'], 'value': [None]},'round': {'id': ['number','precision'], 'type': ['number']*2, 'value': [None]*2},'pow': {'id': ['number', 'pow'], 'type': ['number']*2, 'value': [None]*2},'min': {'id': ['number1','number2'], 'type': ['number']*2, 'value': [None]*2},'max': {'id': ['number1','number2'], 'type': ['number']*2, 'value': [None]*2} } )
     STATIC_CODE_SIGNATURES.update( { '@item': {'id': ['id'], 'type': ['text'], 'value': [None]} ,'@args': {'id': ['*position'], 'type': ['text'], 'value': [None]}, '@description': {'id': ['*description'], 'type': ['text'], 'value': [None]},'@return_var': {'id': ['variable'], 'type': ['variable'], 'value': [None]} } )
+
 def handle_initialize(message: dict) -> dict:
-    load_assets()
     params = message["params"]
     init_opts = params["initializationOptions"]
+    lang = init_opts.get("properties", {}).get("lang", "en_US")
+    load_assets(lang)
     HIDE_HOVER          = bool(init_opts.get("hideHover", False))
     HIDE_COMPLETION     = bool(init_opts.get("hideCompletion", False))
     HIDE_SIGNATURE_HELP = bool(init_opts.get("hideSignatureHelp", False))
     capabilities: dict = {"textDocumentSync": 1, "hoverProvider": not HIDE_HOVER}
     if not HIDE_COMPLETION: capabilities["completionProvider"] = {"triggerCharacters": [".", "(", "[", "'", "<", '"', "@", ",","=", "%"]}
     if not HIDE_SIGNATURE_HELP: capabilities["signatureHelpProvider"] = {"triggerCharacters": ["(",",", "="], "retriggerCharacters": [")"]}
-
     return { "jsonrpc": "2.0", "id": message["id"],"result":{"capabilities": capabilities} }
 
 def handle_didOpen(message: dict) -> None:
@@ -171,7 +172,6 @@ def handle_completion(message):
     curr, prev = get_token(uri, pos), get_token(uri, pos, -1)
     if not trigger and ((curr.value in TRIGGERS and (trigger := curr.value)) or (prev.value in TRIGGERS and (trigger := prev.value))): pass
     if curr.type == 4: trigger = '<'
-    elif curr.type == 30: trigger = curr.value[abs(pos-3)]
     rng_toks = None
     if trigger == '@' and (idx := pos_to_idx(uri, pos)) is not None:
         rng_toks = (global_tokens[uri][idx].starting_pos, global_tokens[uri][idx].ending_pos, -1)
@@ -266,6 +266,7 @@ def main():
             case "textDocument/didOpen": handle_didOpen(message)
             case "textDocument/didClose": handle_didClose(message)
             case "textDocument/didChange": handle_didChange(message)
+            case "shutdown": send_message({"jsonrpc": "2.0", "id": message["id"], "result": None})
     return 0
 
 sys.exit(main())
